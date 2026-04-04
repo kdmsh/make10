@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Make 10 Analyzer</title>
+    <!-- Tailwind CSSの読み込み -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 入力時のデフォルトの矢印（スピナー）を隠すハック */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
+        /* スムーズなフェードインアニメーション */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-200 min-h-screen flex items-center justify-center p-4 font-sans selection:bg-blue-500 selection:text-white">
+
+    <div class="max-w-md w-full bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden">
+        <!-- ヘッダー部分 -->
+        <div class="bg-slate-800/50 p-6 border-b border-slate-700 text-center">
+            <h1 class="text-2xl font-bold tracking-wider text-white">Make 10 Analyzer</h1>
+            <p class="text-sm text-slate-400 mt-2">4つの数字を組み合わせて「10」を作るアルゴリズム</p>
+        </div>
+
+        <!-- 入力・操作部分 -->
+        <div class="p-6">
+            <div class="flex justify-center gap-3 mb-6" id="input-container">
+                <!-- UXを高めるための、1桁ずつの入力フィールド -->
+                <input type="number" min="0" max="9" class="digit-input w-16 h-20 text-center text-3xl font-bold bg-slate-900 border-2 border-slate-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all shadow-inner text-white" data-index="0" autofocus>
+                <input type="number" min="0" max="9" class="digit-input w-16 h-20 text-center text-3xl font-bold bg-slate-900 border-2 border-slate-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all shadow-inner text-white" data-index="1">
+                <input type="number" min="0" max="9" class="digit-input w-16 h-20 text-center text-3xl font-bold bg-slate-900 border-2 border-slate-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all shadow-inner text-white" data-index="2">
+                <input type="number" min="0" max="9" class="digit-input w-16 h-20 text-center text-3xl font-bold bg-slate-900 border-2 border-slate-600 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50 outline-none transition-all shadow-inner text-white" data-index="3">
+            </div>
+
+            <button id="solve-btn" class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl shadow-lg hover:shadow-blue-500/30 transition-all active:scale-[0.98] flex justify-center items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/></svg>
+                解析を実行
+            </button>
+        </div>
+
+        <!-- 結果表示部分 -->
+        <div id="result-area" class="bg-slate-900/50 p-6 min-h-[150px] hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-widest">解析結果</h2>
+                <span id="solution-count" class="px-2 py-1 bg-blue-500/20 text-blue-400 text-xs font-bold rounded-md"></span>
+            </div>
+            <!-- ここに計算式がJSで挿入されます -->
+            <ul id="solution-list" class="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar"></ul>
+        </div>
+    </div>
+
+    <script>
+        // --- UXハック: 入力フィールドの自動フォーカス移動 ---
+        const inputs = document.querySelectorAll('.digit-input');
+        
+        inputs.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                // 入力されたら次の枠へ
+                if (e.target.value.length > 0) {
+                    e.target.value = e.target.value.slice(-1); // 常に1文字のみ
+                    if (index < inputs.length - 1) {
+                        inputs[index + 1].focus();
+                    }
+                }
+            });
+
+            input.addEventListener('keydown', (e) => {
+                // バックスペースで前の枠へ戻るフェイルセーフ
+                if (e.key === 'Backspace' && e.target.value === '') {
+                    if (index > 0) {
+                        inputs[index - 1].focus();
+                        inputs[index - 1].value = ''; // 前の枠も消す
+                    }
+                }
+                // Enterキーで解析実行
+                if (e.key === 'Enter') {
+                    solveMake10Handler();
+                }
+            });
+        });
+
+        // --- コアアルゴリズム: DFSによる総当たり（以前のチャットで設計したもの） ---
+        function solveMake10(digits) {
+            let results = new Set();
+            const EPSILON = 1e-6; // 浮動小数点誤差の吸収用
+
+            function dfs(nums, exprs) {
+                // ベースケース: 数字が1つに収束した場合
+                if (nums.length === 1) {
+                    if (Math.abs(nums[0] - 10) < EPSILON) {
+                        // 出力の見た目を美しくするため、一番外側の不要なカッコを外す
+                        let finalExpr = exprs[0];
+                        if (finalExpr.startsWith('(') && finalExpr.endsWith(')')) {
+                            finalExpr = finalExpr.substring(1, finalExpr.length - 1);
+                        }
+                        results.add(finalExpr + ' = 10');
+                    }
+                    return;
+                }
+
+                // 2つの数字を選び出して演算
+                for (let i = 0; i < nums.length; i++) {
+                    for (let j = 0; j < nums.length; j++) {
+                        if (i === j) continue;
+
+                        let nextNums = [];
+                        let nextExprs = [];
+                        
+                        // 選ばれなかった数字を次のレイヤーへ引き継ぐ
+                        for (let k = 0; k < nums.length; k++) {
+                            if (k !== i && k !== j) {
+                                nextNums.push(nums[k]);
+                                nextExprs.push(exprs[k]);
+                            }
+                        }
+
+                        let a = nums[i], b = nums[j];
+                        let expA = exprs[i], expB = exprs[j];
+
+                        // 四則演算のパターン網羅（+ と * は交換法則が成り立つが、探索空間が小さいので網羅させる）
+                        nextNums.push(a + b); nextExprs.push(`(${expA} + ${expB})`); dfs(nextNums, nextExprs); nextNums.pop(); nextExprs.pop();
+                        nextNums.push(a - b); nextExprs.push(`(${expA} - ${expB})`); dfs(nextNums, nextExprs); nextNums.pop(); nextExprs.pop();
+                        nextNums.push(a * b); nextExprs.push(`(${expA} * ${expB})`); dfs(nextNums, nextExprs); nextNums.pop(); nextExprs.pop();
+                        
+                        // 0除算の回避（フェイルセーフ）
+                        if (Math.abs(b) > EPSILON) {
+                            nextNums.push(a / b); nextExprs.push(`(${expA} / ${expB})`); dfs(nextNums, nextExprs); nextNums.pop(); nextExprs.pop();
+                        }
+                    }
+                }
+            }
+
+            dfs(digits, digits.map(String));
+            return Array.from(results);
+        }
+
+        // --- UI連携ロジック ---
+        function solveMake10Handler() {
+            const digits = [];
+            for (let input of inputs) {
+                const val = parseInt(input.value, 10);
+                if (isNaN(val)) {
+                    showError("4つの数字をすべて入力してください。");
+                    return;
+                }
+                digits.push(val);
+            }
+
+            const solutions = solveMake10(digits);
+            displayResults(solutions);
+        }
+
+        function displayResults(solutions) {
+            const resultArea = document.getElementById('result-area');
+            const solutionList = document.getElementById('solution-list');
+            const countBadge = document.getElementById('solution-count');
+            
+            resultArea.classList.remove('hidden');
+            resultArea.classList.add('fade-in');
+            solutionList.innerHTML = '';
+
+            if (solutions.length === 0) {
+                countBadge.textContent = "0 解法";
+                countBadge.className = "px-2 py-1 bg-red-500/20 text-red-400 text-xs font-bold rounded-md";
+                solutionList.innerHTML = `<li class="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg text-center">この組み合わせでは10を作れません（解なし）</li>`;
+            } else {
+                countBadge.textContent = `${solutions.length} 解法`;
+                countBadge.className = "px-2 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded-md";
+                
+                solutions.forEach(sol => {
+                    const li = document.createElement('li');
+                    li.className = "p-3 bg-slate-800 border border-slate-700 text-slate-200 rounded-lg font-mono text-lg text-center tracking-wider shadow-sm";
+                    
+                    // 演算子に色をつけて視認性をハックする
+                    let highlightedSol = sol
+                        .replace(/\+/g, '<span class="text-blue-400">+</span>')
+                        .replace(/\-/g, '<span class="text-rose-400">-</span>')
+                        .replace(/\*/g, '<span class="text-amber-400">*</span>')
+                        .replace(/\//g, '<span class="text-emerald-400">/</span>');
+                        
+                    li.innerHTML = highlightedSol;
+                    solutionList.appendChild(li);
+                });
+            }
+        }
+
+        function showError(msg) {
+            const resultArea = document.getElementById('result-area');
+            const solutionList = document.getElementById('solution-list');
+            const countBadge = document.getElementById('solution-count');
+            
+            resultArea.classList.remove('hidden');
+            countBadge.textContent = "Error";
+            countBadge.className = "px-2 py-1 bg-yellow-500/20 text-yellow-400 text-xs font-bold rounded-md";
+            solutionList.innerHTML = `<li class="p-3 bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 rounded-lg text-center">${msg}</li>`;
+        }
+
+        // ボタンにイベントをバインド
+        document.getElementById('solve-btn').addEventListener('click', solveMake10Handler);
+    </script>
+</body>
+</html>
