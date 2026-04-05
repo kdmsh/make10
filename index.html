@@ -185,12 +185,15 @@
                     li.className = "p-3 bg-slate-800 border border-slate-700 text-slate-200 rounded-lg font-mono text-lg text-center tracking-wider shadow-sm";
                     
                     // 演算子に色をつけて視認性をハックする
-                    let highlightedSol = sol
-                        .replace(/\+/g, '<span class="text-blue-400">+</span>')
-                        .replace(/\-/g, '<span class="text-rose-400">-</span>')
-                        .replace(/\*/g, '<span class="text-amber-400">*</span>')
-                        .replace(/\//g, '<span class="text-emerald-400">/</span>');
-                        
+                    let highlightedSol = sol.replace(/[\+\-\*\/]/g, function(match) {
+                        switch(match) {
+                            case '+': return '<span class="text-blue-400">+</span>';
+                            case '-': return '<span class="text-rose-400">-</span>';
+                            case '*': return '<span class="text-amber-400">*</span>';
+                            case '/': return '<span class="text-emerald-400">/</span>';
+                            default: return match;
+                        }
+                    });   
                     li.innerHTML = highlightedSol;
                     solutionList.appendChild(li);
                 });
